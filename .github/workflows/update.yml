@@ -20,7 +20,6 @@ jobs:
           php-version: "8.2"
 
       - name: Run Auto Stream Updater
-        id: streamjob
         env:
           JSON_URL: ${{ secrets.JSON_URL }}
           TV_BASE_URL: ${{ secrets.TV_BASE_URL }}
@@ -34,19 +33,25 @@ jobs:
 
           $OUTPUT_JSON = __DIR__ . "/apis/bdix.json";
           $OUTPUT_M3U  = __DIR__ . "/playlist.m3u";
+          $LOCAL_JSON  = __DIR__ . "/apis/data.json";
 
-          echo "Fetching JSON: $JSON_URL\n";
+          echo "Trying to fetch JSON from URL...\n";
           $raw = @file_get_contents($JSON_URL);
 
           if (!$raw) {
-              echo "FATAL_ERROR: Cannot load JSON_URL\n";
-              file_put_contents("status.txt", "fail");
-              exit(1);
+              echo "WARN: Cannot load JSON_URL, fallback to local file\n";
+              if (file_exists($LOCAL_JSON)) {
+                  $raw = file_get_contents($LOCAL_JSON);
+              } else {
+                  echo "FATAL: Local fallback file $LOCAL_JSON not found\n";
+                  file_put_contents("status.txt", "fail");
+                  exit(1);
+              }
           }
 
           $list = json_decode($raw, true);
           if (!is_array($list)) {
-              echo "FATAL_ERROR: JSON invalid\n";
+              echo "FATAL: JSON invalid\n";
               file_put_contents("status.txt", "fail");
               exit(1);
           }
@@ -60,7 +65,7 @@ jobs:
               $cate = $item["cate"];
               $logo = $item["logo"];
 
-              $url = $BASE_URL . urlencode($id);
+              $url  = $BASE_URL . urlencode($id);
               $html = @file_get_contents($url);
 
               if (!$html) {
@@ -92,7 +97,6 @@ jobs:
           file_put_contents($OUTPUT_JSON, json_encode($final, JSON_PRETTY_PRINT));
           file_put_contents($OUTPUT_M3U, $m3u);
           file_put_contents("status.txt", "ok");
-
           ?>
           EOF
 
