@@ -2,15 +2,15 @@ name: Auto Update Playlist
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # Run every 5 minutes
-  workflow_dispatch:         # Manual trigger option
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 jobs:
   update-playlist:
     runs-on: ubuntu-latest
 
     env:
-      BASE_URL: ${{ secrets.BASE_URL }}   # Secret for your playlist server
+      BASE_URL: ${{ secrets.BASE_URL }}
 
     steps:
       - name: Checkout repository
@@ -21,77 +21,90 @@ jobs:
         with:
           php-version: '8.2'
 
-      - name: Run playlist generator in-line with User-Agent
+      - name: Fetch homepage data and generate JSON
         run: |
           php -r '
-          $dataFile = __DIR__ . "/pr/data.json";
-          $outputM3U = __DIR__ . "/pr/playlist.m3u";
-          $outputJSON = __DIR__ . "/pr/playlist.json";
-
+          $baseDir = __DIR__ . "/pr";
           $baseURL = getenv("BASE_URL");
           if (!$baseURL) die("BASE_URL secret not set\n");
 
-          $data = json_decode(file_get_contents($dataFile), true);
-          if (!$data) die("Failed to read data.json\n");
+          // Browser User-Agent
+          $opts = [
+              "http" => [
+                  "method" => "GET",
+                  "header" => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36\r\n"
+              ]
+          ];
+          $context = stream_context_create($opts);
 
-          $m3uContent = "#EXTM3U\n";
-          $allJson = [];
+          // Fetch homepage JSON
+          $homepageData = @file_get_contents("{$baseURL}/pv/homepage.php", false, $context);
+          if(!$homepageData) die("Failed to fetch homepage.php\n");
 
-          foreach ($data as $item) {
-              $id = $item["id"];
-              $title = $item["title"] ?? $id;
-              $logo = str_replace("$id", $id, $item["logo"] ?? "");
+          $data = json_decode($homepageData, true);
+          if(!$data) die("Invalid JSON from homepage.php\n");
 
-              $tm = time();
-              $playlistURL = "{$baseURL}/pv/playlist.php?id={$id}&tm={$tm}";
-
-              // Set browser User-Agent
-              $opts = [
-                  "http" => [
-                      "method" => "GET",
-                      "header" => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36\r\n"
-                  ]
-              ];
-              $context = stream_context_create($opts);
-
-              $jsonData = @file_get_contents($playlistURL, false, $context);
-              if (!$jsonData) continue;
-
-              $jsonArr = json_decode($jsonData, true);
-              if (!$jsonArr) continue;
-
-              $allJson[$id] = $jsonArr;
-
-              if (isset($jsonArr[0]["sources"])) {
-                  foreach ($jsonArr[0]["sources"] as $source) {
-                      $file = $source["file"];
-                      $label = $source["label"] ?? "Unknown";
-                      $m3uContent .= "#EXTINF:-1 tvg-logo=\"{$logo}\" group-title=\"{$title}\",{$title} - {$label}\n";
-                      $m3uContent .= $file . "\n";
+          // --- Slider ---
+          $sliderOut = [];
+          if(isset($data["slider"])) {
+              foreach($data["slider"] as $item) {
+                  $id = $item["id"];
+                  $tm = time();
+                  $playlistURL = "{$baseURL}/pv/playlist.php?id={$id}&tm={$tm}";
+                  $jsonData = @file_get_contents($playlistURL, false, $context);
+                  if(!$jsonData) continue;
+                  $jsonArr = json_decode($jsonData, true);
+                  if(isset($jsonArr[0])) {
+                      $jsonArr[0]["image2"] = "https://imgcdn.kim/pv/341/{$id}.jpg";
+                      $jsonArr[0]["image1"] = "https://imgcdn.kim/pv/c/{$id}.jpg";
                   }
+                  $sliderOut[$id] = $jsonArr;
+              }
+              @mkdir($baseDir."/slider", 0777, true);
+              file_put_contents($baseDir."/slider/slider.json", json_encode($sliderOut, JSON_PRETTY_PRINT));
+          }
+
+          // --- Posts ---
+          if(isset($data["post"])) {
+              foreach($data["post"] as $post) {
+                  $cate = $post["cate"];
+                  $ids = explode(",", $post["ids"]);
+                  $postOut = [];
+                  foreach($ids as $id) {
+                      $id = trim($id);
+                      $tm = time();
+                      $playlistURL = "{$baseURL}/pv/playlist.php?id={$id}&tm={$tm}";
+                      $jsonData = @file_get_contents($playlistURL, false, $context);
+                      if(!$jsonData) continue;
+                      $jsonArr = json_decode($jsonData, true);
+                      if(isset($jsonArr[0])) {
+                          $jsonArr[0]["image2"] = "https://imgcdn.kim/pv/341/{$id}.jpg";
+                          $jsonArr[0]["image1"] = "https://imgcdn.kim/pv/c/{$id}.jpg";
+                      }
+                      $postOut[$id] = $jsonArr;
+                  }
+                  $safeCate = preg_replace("/[^A-Za-z0-9_-]/", "_", $cate);
+                  @mkdir($baseDir."/post/{$safeCate}", 0777, true);
+                  file_put_contents($baseDir."/post/{$safeCate}/{$safeCate}.json", json_encode($postOut, JSON_PRETTY_PRINT));
               }
           }
 
-          file_put_contents($outputM3U, $m3uContent);
-          file_put_contents($outputJSON, json_encode($allJson, JSON_PRETTY_PRINT));
-          echo "Playlist generated successfully.\n";
+          echo "Homepage slider and post JSON generated successfully.\n";
           '
 
       - name: Commit and push updated files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Ensure files exist
-          touch pr/playlist.m3u pr/playlist.json
 
-          git add pr/playlist.m3u pr/playlist.json
+          mkdir -p pr/slider pr/post
 
-          # Only commit if there are changes
+          git add pr/slider/* pr/post/*
+
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Auto-update playlist at $(date +'%Y-%m-%d %H:%M:%S')"
+            git commit -m "Auto-update slider and posts at $(date +'%Y-%m-%d %H:%M:%S')"
             git push
           fi
         env:
