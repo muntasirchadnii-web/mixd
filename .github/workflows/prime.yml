@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      BASE_URL: ${{ secrets.BASE_URL }}   
+      BASE_URL: ${{ secrets.BASE_URL }}  
 
     steps:
       - name: Checkout repository
@@ -63,6 +63,7 @@ jobs:
               }
           }
 
+          // Save M3U and JSON
           file_put_contents($outputM3U, $m3uContent);
           file_put_contents($outputJSON, json_encode($allJson, JSON_PRETTY_PRINT));
           echo "Playlist generated successfully.\n";
@@ -72,8 +73,18 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add playlist.m3u playlist.json
-          git commit -m "Auto-update playlist at $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes"
-          git push
+          
+          # Ensure files exist
+          touch pr/playlist.m3u pr/playlist.json
+
+          git add pr/playlist.m3u pr/playlist.json
+
+          # Only commit if there are changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-update playlist at $(date +'%Y-%m-%d %H:%M:%S')"
+            git push
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
