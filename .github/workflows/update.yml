@@ -2,7 +2,7 @@ name: BDIX Stream Auto Updater
 
 on:
   schedule:
-    - cron: "0 */2 * * *"  
+    - cron: "0 */2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -13,15 +13,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.2"
 
       - name: Run Auto Stream Updater
+        id: streamjob
         env:
           JSON_URL: ${{ secrets.JSON_URL }}
           TV_BASE_URL: ${{ secrets.TV_BASE_URL }}
@@ -34,14 +33,23 @@ jobs:
           $BASE_URL  = getenv("TV_BASE_URL");
 
           $OUTPUT_JSON = __DIR__ . "/apis/bdix.json";
-          $OUTPUT_M3U  = __DIR__ . "/apis/playlist.m3u";
+          $OUTPUT_M3U  = __DIR__ . "/playlist.m3u";
 
-          echo "Loading source JSON...\n";
-          $raw = file_get_contents($JSON_URL);
-          if (!$raw) die("ERROR: Failed loading source JSON\n");
+          echo "Fetching JSON: $JSON_URL\n";
+          $raw = @file_get_contents($JSON_URL);
+
+          if (!$raw) {
+              echo "FATAL_ERROR: Cannot load JSON_URL\n";
+              file_put_contents("status.txt", "fail");
+              exit(1);
+          }
 
           $list = json_decode($raw, true);
-          if (!is_array($list)) die("ERROR: Invalid JSON structure\n");
+          if (!is_array($list)) {
+              echo "FATAL_ERROR: JSON invalid\n";
+              file_put_contents("status.txt", "fail");
+              exit(1);
+          }
 
           $final = [];
           $m3u   = "#EXTM3U\n";
@@ -52,11 +60,11 @@ jobs:
               $cate = $item["cate"];
               $logo = $item["logo"];
 
-              $url  = $BASE_URL . urlencode($id);
+              $url = $BASE_URL . urlencode($id);
               $html = @file_get_contents($url);
 
               if (!$html) {
-                  echo "FAILED: $id (cannot load player)\n";
+                  echo "FAILED: Cannot load $id\n";
                   continue;
               }
 
@@ -83,17 +91,25 @@ jobs:
 
           file_put_contents($OUTPUT_JSON, json_encode($final, JSON_PRETTY_PRINT));
           file_put_contents($OUTPUT_M3U, $m3u);
+          file_put_contents("status.txt", "ok");
 
-          echo "DONE: Updated bdix.json & playlist.m3u\n";
           ?>
           EOF
 
           php fetch.php
+
+      - name: Check Status Before Commit
+        run: |
+          STATUS=$(cat status.txt)
+          if [ "$STATUS" = "fail" ]; then
+            echo "Skipping commit because JSON failed."
+            exit 0
+          fi
 
       - name: Commit & Push Updated Files
         run: |
           git config user.email "auto@github.com"
           git config user.name "AutoBot"
           git add apis/bdix.json playlist.m3u
-          git commit -m "Auto update (streams refreshed)" || echo "No changes"
+          git commit -m "Auto update" || true
           git push
