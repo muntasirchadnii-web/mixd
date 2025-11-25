@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      BASE_URL: ${{ secrets.BASE_URL }}   # Secret for your net51.cc URL
+      BASE_URL: ${{ secrets.BASE_URL }}   
 
     steps:
       - name: Checkout repository
@@ -24,9 +24,9 @@ jobs:
       - name: Run playlist generator in-line
         run: |
           php -r '
-          $dataFile = __DIR__ . "/Prime/data.json";
-          $outputM3U = __DIR__ . "/Prime/playlist.m3u";
-          $outputJSON = __DIR__ . "/Prime/playlist.json";
+          $dataFile = __DIR__ . "/pr/data.json";
+          $outputM3U = __DIR__ . "/pr/playlist.m3u";
+          $outputJSON = __DIR__ . "/pr/playlist.json";
 
           $baseURL = getenv("BASE_URL");
           if (!$baseURL) die("BASE_URL secret not set\n");
