@@ -1,0 +1,79 @@
+name: Auto Update Playlist
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   
+  workflow_dispatch:         
+
+jobs:
+  update-playlist:
+    runs-on: ubuntu-latest
+
+    env:
+      BASE_URL: ${{ secrets.BASE_URL }}   # Secret for your net51.cc URL
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+
+      - name: Run playlist generator in-line
+        run: |
+          php -r '
+          $dataFile = __DIR__ . "/Prime/data.json";
+          $outputM3U = __DIR__ . "/Prime/playlist.m3u";
+          $outputJSON = __DIR__ . "/Prime/playlist.json";
+
+          $baseURL = getenv("BASE_URL");
+          if (!$baseURL) die("BASE_URL secret not set\n");
+
+          $data = json_decode(file_get_contents($dataFile), true);
+          if (!$data) die("Failed to read data.json\n");
+
+          $m3uContent = "#EXTM3U\n";
+          $allJson = [];
+
+          foreach ($data as $item) {
+              $id = $item["id"];
+              $title = $item["title"] ?? $id;
+              $logo = str_replace("$id", $id, $item["logo"] ?? "");
+
+              $tm = time();
+              $playlistURL = "{$baseURL}/pv/playlist.php?id={$id}&tm={$tm}";
+
+              $jsonData = @file_get_contents($playlistURL);
+              if (!$jsonData) continue;
+
+              $jsonArr = json_decode($jsonData, true);
+              if (!$jsonArr) continue;
+
+              $allJson[$id] = $jsonArr;
+
+              if (isset($jsonArr[0]["sources"])) {
+                  foreach ($jsonArr[0]["sources"] as $source) {
+                      $file = $source["file"];
+                      $label = $source["label"] ?? "Unknown";
+                      $m3uContent .= "#EXTINF:-1 tvg-logo=\"{$logo}\" group-title=\"{$title}\",{$title} - {$label}\n";
+                      $m3uContent .= $file . "\n";
+                  }
+              }
+          }
+
+          file_put_contents($outputM3U, $m3uContent);
+          file_put_contents($outputJSON, json_encode($allJson, JSON_PRETTY_PRINT));
+          echo "Playlist generated successfully.\n";
+          '
+
+      - name: Commit and push updated files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add playlist.m3u playlist.json
+          git commit -m "Auto-update playlist at $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
