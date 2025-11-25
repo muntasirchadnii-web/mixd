@@ -2,15 +2,15 @@ name: Auto Update Playlist
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   
-  workflow_dispatch:         
+    - cron: "*/5 * * * *"   # Run every 5 minutes
+  workflow_dispatch:         # Manual trigger option
 
 jobs:
   update-playlist:
     runs-on: ubuntu-latest
 
     env:
-      BASE_URL: ${{ secrets.BASE_URL }}  
+      BASE_URL: ${{ secrets.BASE_URL }}   # Secret for your playlist server
 
     steps:
       - name: Checkout repository
@@ -21,7 +21,7 @@ jobs:
         with:
           php-version: '8.2'
 
-      - name: Run playlist generator in-line
+      - name: Run playlist generator in-line with User-Agent
         run: |
           php -r '
           $dataFile = __DIR__ . "/pr/data.json";
@@ -45,7 +45,16 @@ jobs:
               $tm = time();
               $playlistURL = "{$baseURL}/pv/playlist.php?id={$id}&tm={$tm}";
 
-              $jsonData = @file_get_contents($playlistURL);
+              // Set browser User-Agent
+              $opts = [
+                  "http" => [
+                      "method" => "GET",
+                      "header" => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36\r\n"
+                  ]
+              ];
+              $context = stream_context_create($opts);
+
+              $jsonData = @file_get_contents($playlistURL, false, $context);
               if (!$jsonData) continue;
 
               $jsonArr = json_decode($jsonData, true);
@@ -63,7 +72,6 @@ jobs:
               }
           }
 
-          // Save M3U and JSON
           file_put_contents($outputM3U, $m3uContent);
           file_put_contents($outputJSON, json_encode($allJson, JSON_PRETTY_PRINT));
           echo "Playlist generated successfully.\n";
