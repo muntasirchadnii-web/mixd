@@ -2,7 +2,7 @@ name: BDIX Stream Auto Updater
 
 on:
   schedule:
-    - cron: "0 */2 * * *"
+    - cron: "*/5 * * * *"   
   workflow_dispatch:
 
 permissions:
@@ -25,7 +25,6 @@ jobs:
           TV_BASE_URL: ${{ secrets.TV_BASE_URL }}
         run: |
           mkdir -p apis
-
           cat > fetch.php << 'EOF'
           <?php
           $JSON_URL  = getenv("JSON_URL");
