@@ -2,7 +2,7 @@ name: BDIX Stream Auto Updater
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   
+    - cron: "*/5 * * * *" 
   workflow_dispatch:
 
 permissions:
@@ -19,38 +19,33 @@ jobs:
         with:
           php-version: "8.2"
 
-      - name: Run Auto Stream Updater
+      - name: Run Auto Stream Updater (LOCAL JSON ONLY)
         env:
-          JSON_URL: ${{ secrets.JSON_URL }}
           TV_BASE_URL: ${{ secrets.TV_BASE_URL }}
         run: |
           mkdir -p apis
           cat > fetch.php << 'EOF'
           <?php
-          $JSON_URL  = getenv("JSON_URL");
+
           $BASE_URL  = getenv("TV_BASE_URL");
 
           $OUTPUT_JSON = __DIR__ . "/apis/bdix.json";
           $OUTPUT_M3U  = __DIR__ . "/playlist.m3u";
           $LOCAL_JSON  = __DIR__ . "/apis/data.json";
 
-          echo "Trying to fetch JSON from URL...\n";
-          $raw = @file_get_contents($JSON_URL);
+          echo "Loading ONLY local JSON...\n";
 
-          if (!$raw) {
-              echo "WARN: Cannot load JSON_URL, fallback to local file\n";
-              if (file_exists($LOCAL_JSON)) {
-                  $raw = file_get_contents($LOCAL_JSON);
-              } else {
-                  echo "FATAL: Local fallback file $LOCAL_JSON not found\n";
-                  file_put_contents("status.txt", "fail");
-                  exit(1);
-              }
+          if (!file_exists($LOCAL_JSON)) {
+              echo "FATAL: Local JSON missing: $LOCAL_JSON\n";
+              file_put_contents("status.txt", "fail");
+              exit(1);
           }
 
+          $raw = file_get_contents($LOCAL_JSON);
           $list = json_decode($raw, true);
+
           if (!is_array($list)) {
-              echo "FATAL: JSON invalid\n";
+              echo "FATAL: Local JSON invalid\n";
               file_put_contents("status.txt", "fail");
               exit(1);
           }
